@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>トットリ・ゴー！デリバリー</title>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%; height: 100%; margin: 0; padding: 0;
+      overflow: hidden; font-family: "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+      background: #dff4ff; transition: background 1.5s ease;
+    }
+
+    body.night-mode { background: #091526; }
+
+    #gameCanvas {
+      position: fixed; inset: 0; display: block; width: 100%; height: 100%;
+    }
+
+    /* --- HUD UI --- */
+    .game-hud {
+      position: fixed; top: 10px; left: 10px; z-index: 10;
+      width: min(290px, calc(100vw - 20px)); padding: 8px 12px;
+      border: 2px solid #fff; border-radius: 12px;
+      background: rgba(53, 75, 88, 0.92); color: #fff;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.2); font-size: 12px;
+      transition: background 1s ease, all 0.3s ease;
+    }
+
+    .game-hud.collapsed .hud-content { display: none; }
+    body.night-mode .game-hud { background: rgba(18, 28, 48, 0.95); border-color: #83b2ff; }
+
+    .game-title-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      cursor: pointer; user-select: none;
+    }
+    .game-title { font-size: 14px; font-weight: 900; }
+    .hud-toggle-btn {
+      background: rgba(255, 255, 255, 0.2); border: 1px solid #fff;
+      color: #fff; border-radius: 4px; padding: 1px 6px; font-size: 12px;
+      cursor: pointer; font-weight: bold;
+    }
+    .hud-content { margin-top: 4px; }
+    .hud-row { display: flex; justify-content: space-between; gap: 6px; margin-top: 2px; font-weight: bold; }
+
+    #turnDisplay { color: #ffe600; font-weight: 900; }
+    #vehicleDisplay { color: #53e3a6; }
+    .bot-hud-1 { color: #ff6b81; }
+    .bot-hud-2 { color: #ffe100; }
+    .bot-hud-3 { color: #d6a4ff; }
+
+    /* --- 右上：マスカラーガイド --- */
+    .node-legend-box {
+      position: fixed; right: 10px; top: 10px; z-index: 10;
+      padding: 8px 10px; border-radius: 10px;
+      background: rgba(255, 255, 255, 0.92); color: #2c3e50;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.15); font-size: 11px;
+      border: 2px solid #fff; display: flex; flex-direction: column; gap: 3px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-weight: bold; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; border: 1px solid #333; display: inline-block; flex-shrink: 0; }
+
+    /* --- メッセージエリア --- */
+    #message {
+      position: fixed; left: 50%; bottom: 80px; z-index: 10;
+      width: min(650px, calc(100vw - 24px)); transform: translateX(-50%);
+      padding: 10px 16px; border: 3px solid #f4ca77; border-radius: 16px;
+      background: #fffdf1; color: #663b20; text-align: center;
+      font-weight: bold; line-height: 1.5; box-shadow: 0 4px 0 #d6a455;
+      cursor: pointer; user-select: none; font-size: 14px;
+    }
+
+    .tap-hint {
+      display: block; margin-top: 3px; font-size: 11px; color: #e65100;
+      animation: blink 1.2s infinite;
+    }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    .game-controls {
+      position: fixed; right: 16px; bottom: 16px; z-index: 10; display: flex; gap: 10px;
+    }
+
+    .game-button {
+      min-height: 48px; padding: 10px 20px; border: 3px solid #fff;
+      border-radius: 30px; background: linear-gradient(#ffd94e, #ff9f00);
+      color: #593513; box-shadow: 0 4px 0 #b96c0b;
+      font-size: 16px; font-weight: 900; cursor: pointer;
+    }
+    .game-button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    /* --- タイトル画面 --- */
+    #titleScreen {
+      position: fixed; inset: 0; z-index: 5000;
+      background: linear-gradient(180deg, #1b85e0 0%, #68cae8 35%, #ebcf80 65%, #63a332 100%);
+      overflow: hidden; user-select: none;
+    }
+    #titleScreen[hidden] { display: none !important; }
+
+    .bg-sun {
+      position: absolute; top: -20px; left: -20px; width: 140px; height: 140px;
+      background: radial-gradient(circle, #fffdf0 20%, #ffe600 60%, rgba(255,230,0,0) 100%);
+      border-radius: 50%; filter: blur(4px);
+    }
+
+    .bg-dune {
+      position: absolute; left: -40px; top: 110px; width: 220px; height: 160px;
+      background: #e5b95a; border-radius: 50% 50% 0 0 / 70% 70% 0 0;
+      box-shadow: inset -10px -10px 0 #cb9e40;
+    }
+    .dune-sign {
+      position: absolute; left: 20px; top: 130px; background: #fff8e7; border: 2px solid #8d5e2a;
+      padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 900; color: #5a3a16;
+    }
+    .title-truck {
+      position: absolute; left: 120px; top: 125px; font-size: 36px; transform: scaleX(-1);
+      filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+    }
+
+    .bg-mountain {
+      position: absolute; right: -20px; top: 80px; width: 260px; height: 220px;
+      background: linear-gradient(160deg, #2e7d32, #1b5e20); clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+    }
+    .mountain-snow {
+      position: absolute; right: 50px; top: 80px; width: 120px; height: 70px;
+      background: #ffffff; clip-path: polygon(50% 0%, 15% 100%, 85% 100%);
+    }
+
+    .title-logo-box {
+      position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+      text-align: center; width: min(92%, 520px); z-index: 10;
+    }
+    .title-logo-main {
+      font-size: clamp(34px, 7.5vw, 56px); font-weight: 900; color: #ffd600;
+      -webkit-text-stroke: 3.5px #d32f2f; text-shadow: 0 6px 0 #b71c1c, 0 10px 18px rgba(0,0,0,0.4);
+      line-height: 1.1;
+    }
+    .title-logo-blue {
+      font-size: clamp(36px, 8vw, 60px); color: #00d2ff;
+      -webkit-text-stroke: 3.5px #024796; text-shadow: 0 6px 0 #012b5c, 0 10px 18px rgba(0,0,0,0.4);
+    }
+    .title-ribbon {
+      display: inline-block; margin-top: -5px; padding: 4px 22px; background: linear-gradient(#a0522d, #5c2c16);
+      border: 2px solid #ffd700; border-radius: 20px; color: #fff8d6; font-size: clamp(12px, 3vw, 16px);
+      font-weight: 900; box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    }
+
+    .title-board-ring {
+      position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%);
+      width: min(600px, 98vw); height: 320px; border: 18px solid #388e3c;
+      border-radius: 50% 50% 0 0 / 100% 100% 0 0; background: #81c784;
+      box-shadow: inset 0 10px 20px rgba(0,0,0,0.2), 0 8px 0 #1b5e20;
+    }
+
+    .station-badge {
+      background: #ffffff; border: 2px solid #424242; border-radius: 6px;
+      padding: 2px 6px; font-size: 11px; font-weight: 900; color: #212121;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2); display: inline-block;
+    }
+
+    .spot-tottori { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 6; }
+    .spot-kurayoshi { position: absolute; top: 170px; left: 25%; z-index: 6; }
+    .spot-yonago { position: absolute; top: 170px; right: 25%; z-index: 6; }
+    .spot-kotonoura { position: absolute; bottom: 12px; left: 8%; z-index: 6; }
+		.spot-sakaiminato { position: absolute; top: 120px; left: 8%; z-index: 6; }
+		
+    .title-buttons-container {
+      position: absolute; top: 48%; left: 50%; transform: translate(-50%, -45%);
+      display: flex; flex-direction: column; gap: 9px; width: min(340px, 86vw); z-index: 20;
+    }
+
+    .pill-btn {
+      position: relative; width: 100%; height: 48px; border: 3px solid #ffffff;
+      border-radius: 30px; font-size: 18px; font-weight: 900; color: #ffffff;
+      box-shadow: 0 5px 0 rgba(0,0,0,0.3), inset 0 3px 3px rgba(255,255,255,0.5);
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+      text-shadow: 0 2px 3px rgba(0,0,0,0.4); transition: transform 0.1s, box-shadow 0.1s;
+    }
+    .pill-btn:active { transform: translateY(3px); box-shadow: 0 2px 0 rgba(0,0,0,0.3); }
+
+    .btn-gamestart { background: linear-gradient(180deg, #ffc107 0%, #ff8f00 50%, #e65100 100%); }
+    .btn-multi { background: linear-gradient(180deg, #ab47bc 0%, #7b1fa2 100%); }
+    .btn-howto { background: linear-gradient(180deg, #81c784 0%, #43a047 50%, #1b5e20 100%); }
+    .btn-zukan { background: linear-gradient(180deg, #64b5f6 0%, #1e88e5 50%, #0d47a1 100%); }
+
+    /* モーダル共通 */
+    .modal-screen[hidden] { display: none !important; }
+    .modal-screen {
+      position: fixed; inset: 0; z-index: 6000;
+      display: flex; align-items: center; justify-content: center;
+      padding: 12px; overflow-y: auto; background: rgba(20, 45, 48, 0.75);
+    }
+    .modal-window {
+      width: min(780px, 100%); max-height: 96vh; overflow-y: auto;
+      padding: 16px; border: 5px solid #fff1c3; border-radius: 25px;
+      background: linear-gradient(#fffdf0, #eaffd5); box-shadow: 0 7px 0 #bf8845, 0 14px 35px #0006;
+    }
+
+    .modal-header {
+      display: flex; align-items: center; gap: 10px; padding: 12px;
+      border: 3px solid #a96b35; border-radius: 18px;
+      background: linear-gradient(#fff1c8, #ffd98b); color: #60341b;
+    }
+    .modal-icon { flex-shrink: 0; font-size: clamp(35px, 7vw, 58px); }
+    .modal-header h1 { margin: 0; font-size: clamp(20px, 4.5vw, 32px); text-shadow: 1px 2px #fff; }
+    .modal-header p { margin: 4px 0 0; font-size: clamp(12px, 2.5vw, 14px); font-weight: bold; line-height: 1.4; }
+    .modal-close {
+      align-self: flex-start; flex-shrink: 0; width: 34px; height: 34px; margin-left: auto;
+      border: 2px solid #a96b35; border-radius: 50%; background: #fff; color: #713817;
+      font-size: 23px; cursor: pointer;
+    }
+
+    /* マルチモーダル用スタイル */
+    .multi-box {
+      background: #fff; border: 2px solid #ab47bc; border-radius: 14px;
+      padding: 16px; margin-top: 14px; text-align: center;
+    }
+    .name-input, .multi-input {
+      font-size: 20px; font-weight: bold; text-align: center;
+      padding: 8px 12px; border: 2px solid #7b1fa2; border-radius: 10px;
+      width: min(260px, 90%); margin-bottom: 10px;
+    }
+    .multi-input { letter-spacing: 4px; font-size: 24px; width: 160px; }
+    .room-code-display {
+      font-size: 36px; font-weight: 900; color: #7b1fa2; letter-spacing: 6px;
+      background: #f3e5f5; border: 2px dashed #ab47bc; border-radius: 12px;
+      padding: 8px; margin: 10px auto; width: 220px;
+    }
+
+    .shop-status {
+      display: flex; justify-content: space-between; align-items: center; margin: 12px 0;
+      padding: 10px 14px; border: 2px solid #e3b65b; border-radius: 14px; background: #fff;
+      color: #58351b; font-weight: bold;
+    }
+    #shopMoney, #garageMoney { color: #b66b00; font-size: 20px; }
+
+    .shop-products { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+    .shop-product {
+      min-width: 0; padding: 10px; border: 3px solid #efbd54; border-radius: 15px;
+      background: #fff; text-align: center; box-shadow: 0 3px 0 #e8d6a4;
+      display: flex; flex-direction: column; justify-content: space-between;
+    }
+    .shop-product h2 {
+      display: flex; justify-content: center; align-items: center; min-height: 38px; margin: 0 0 6px;
+      padding: 4px 2px; border-radius: 9px; background: #f3a928; color: #fff; font-size: 14px;
+    }
+    .product-art { display: flex; align-items: center; justify-content: center; min-height: 50px; font-size: 40px; }
+    .product-desc { font-size: 11px; color: #d32f2f; font-weight: bold; margin: 4px 0; min-height: 32px; line-height: 1.3; }
+    .product-price { margin: 4px 0 8px; color: #613b1b; font-size: 15px; font-weight: 900; }
+    .shop-buy {
+      width: 100%; min-height: 38px; border: 2px solid #a75a08; border-radius: 24px;
+      background: linear-gradient(#ffd74e, #ff9d00); color: #fff; box-shadow: 0 3px 0 #c7770b;
+      font-size: 14px; font-weight: 900; cursor: pointer;
+    }
+    .shop-buy:disabled { border-color: #aaa; background: #ddd; color: #777; box-shadow: none; cursor: not-allowed; }
+
+    .modal-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+    .modal-return {
+      padding: 10px 18px; border: 3px solid #245f91; border-radius: 30px;
+      background: linear-gradient(#69c7ff, #2384db); color: #fff; box-shadow: 0 4px 0 #18558c;
+      font-size: 14px; font-weight: 900; cursor: pointer;
+    }
+
+    .quiz-window { text-align: center; color: #422006; }
+    .quiz-question { font-size: 18px; font-weight: bold; margin: 16px 0; line-height: 1.5; background: #fff; padding: 14px; border-radius: 12px; border: 2px solid #f3a928; }
+    .quiz-options { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+    .quiz-btn {
+      padding: 12px; border: 3px solid #2874a6; border-radius: 14px; background: #ebf5fb;
+      color: #1b4f72; font-size: 16px; font-weight: bold; cursor: pointer; text-align: left;
+    }
+
+    .howto-content { text-align: left; font-size: 13px; line-height: 1.7; color: #422006; }
+    .howto-section { background: #fff; border: 2px solid #e3b65b; border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+    .howto-section h3 { margin: 0 0 6px; color: #e65100; font-size: 15px; }
+
+    .zukan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 12px; }
+    .zukan-card {
+      background: #fff; border: 3px solid #e3b65b; border-radius: 16px; padding: 12px; text-align: center; box-shadow: 0 3px 0 #d6a455;
+    }
+    .zukan-card.locked { opacity: 0.6; filter: grayscale(1); }
+
+    .result-window { text-align: center; color: #58351b; }
+    .result-title { font-size: 28px; font-weight: 900; color: #e65100; margin-bottom: 12px; }
+    .result-table { width: 100%; border-collapse: collapse; margin: 16px 0; background: #fff; border-radius: 12px; overflow: hidden; }
+    .result-table th, .result-table td { padding: 10px; border: 1px solid #ffd98b; font-size: 14px; text-align: center; }
+    .result-table th { background: #ffe8b3; font-weight: 900; }
+    .rank-1 { background: #fff9db; font-weight: bold; color: #d32f2f; }
+    .result-actions { display: flex; justify-content: center; gap: 12px; margin-top: 16px; }
+  </style>
+</head>
+
+<body>
+  <!-- タイトル画面 -->
+  <div id="titleScreen">
+    <div class="bg-sun"></div>
+
+    <div class="bg-dune"></div>
+    <div class="dune-sign">鳥取砂丘</div>
+    <div class="title-truck">🛻</div>
+
+    <div class="bg-mountain"></div>
+    <div class="mountain-snow"></div>
+
+    <div class="title-logo-box">
+      <div class="title-logo-main">トットリ・ゴー！</div>
+      <div class="title-logo-blue">デリバリー</div>
+      <div class="title-ribbon">〜鳥取ぐるっと特産品大作戦〜</div>
+    </div>
+
+    <div class="title-board-ring"></div>
+
+    <div class="spot-tottori station-badge">🏢 鳥取駅</div>
+    <div class="spot-kurayoshi station-badge">🏬 倉吉駅</div>
+    <div class="spot-yonago station-badge">🚉 米子駅</div>
+    <div class="spot-kotonoura station-badge">🌊 道の駅 琴の浦</div>
+    <div class="spot-sakaiminato station-badge">⚓ 境港 <small>(さかいみなと)</small></div>
+
+    <div class="title-buttons-container">
+      <button id="startGameBtn" class="pill-btn btn-gamestart">👤 ひとりで遊ぶ (VS Bot)</button>
+      <button id="multiMenuBtn" class="pill-btn btn-multi">👥 みんなで遊ぶ (ルーム)</button>
+      <button id="howtoBtn" class="pill-btn btn-howto">📖 あそびかた</button>
+      <button id="zukanBtn" class="pill-btn btn-zukan">📙 特産品図鑑</button>
+    </div>
+  </div>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- 左上：ステータス表示 HUD -->
+  <section id="gameHud" class="game-hud">
+    <div id="hudTitleBar" class="game-title-bar">
+      <div class="game-title">🚚 デリバリーバトル</div>
+      <button id="hudToggleBtn" class="hud-toggle-btn">▲</button>
+    </div>
+    <div class="hud-content">
+      <div class="hud-row"><span>⏳ 残りターン</span><span id="turnDisplay">20 / 20</span></div>
+      <div class="hud-row"><span>🛵 乗 り 物</span><span id="vehicleDisplay">🚲 自転車</span></div>
+      <div class="hud-row"><span>🪙 所持金</span><span id="moneyDisplay">500円</span></div>
+      <div class="hud-row"><span>📦 荷物(HP)</span><span id="productDisplay">なし</span></div>
+      <div class="hud-row"><span>⏳ 荷物条件</span><span id="itemStatusDisplay">なし</span></div>
+      <div class="hud-row"><span>⭐ <span id="myPlayerLabel">あなた</span>の売上</span><span id="rewardDisplay">0円</span></div>
+      <div class="hud-row bot-hud-1"><span id="botLabel0">🤖 プレイヤー2</span><span id="botDisplay0">売上: 0円</span></div>
+      <div class="hud-row bot-hud-2"><span id="botLabel1">🤖 プレイヤー3</span><span id="botDisplay1">売上: 0円</span></div>
+      <div class="hud-row bot-hud-3"><span id="botLabel2">🤖 プレイヤー4</span><span id="botDisplay2">売上: 0円</span></div>
+    </div>
+  </section>
+
+  <!-- 右上：マスカラーガイド -->
+  <div class="node-legend-box">
+    <div class="legend-item"><span class="dot" style="background:#2788ff;"></span>青：ボーナス/クイズ</div>
+    <div class="legend-item"><span class="dot" style="background:#ff5252;"></span>赤：ピンチ/荷物ダメ</div>
+    <div class="legend-item"><span class="dot" style="background:#ffad33;"></span>橙：特産品仕入れ</div>
+    <div class="legend-item"><span class="dot" style="background:#9b72cf;"></span>紫：車庫整備(進化)</div>
+    <div class="legend-item"><span class="dot" style="background:#ffdf55;"></span>黄：カード獲得</div>
+    <div class="legend-item"><span class="dot" style="background:#35b8a0;"></span>緑：分岐ルート</div>
+  </div>
+
+  <!-- メッセージエリア -->
+  <div id="message" role="status" aria-live="polite">
+    <span id="messageText">サイコロを振って進もう！お店マスで特産品を買おう！</span>
+    <span id="tapHint" class="tap-hint" hidden>▼ タップして次へ</span>
+  </div>
+
+  <div class="game-controls">
+    <button id="cardBtn" class="game-button" style="background: linear-gradient(#64b5f6, #1976d2); color:#fff; box-shadow:0 4px 0 #0d47a1;">🎴 カード(2)</button>
+    <button id="diceBtn" class="game-button">🎲 サイコロ</button>
+  </div>
+
+  <!-- オンラインルーム選択モーダル -->
+  <div id="multiScreen" class="modal-screen" hidden>
+    <div class="modal-window">
+      <header class="modal-header">
+        <div class="modal-icon">🌐</div>
+        <div>
+          <h1>みんなで遊ぶ（オンライン）</h1>
+          <p>名前を入力してから部屋の作成・参加を行おう！</p>
+        </div>
+        <button id="multiCloseBtn" class="modal-close">×</button>
+      </header>
+
+      <!-- ステップ1：名前入力 -->
+      <div id="nameInputStep" class="multi-box">
+        <h3>✏️ あなたのお名前を入力してください</h3>
+        <input type="text" id="playerNameInput" class="name-input" maxlength="8" >
+        <div>
+          <button id="confirmNameBtn" class="game-button" style="background: linear-gradient(#81c784, #388e3c); color:#fff; box-shadow:0 4px 0 #1b5e20;">名前を決定して進む</button>
+        </div>
+      </div>
+
+      <!-- ステップ2：部屋作成・コード入力 -->
+      <div id="roomSelectStep" hidden>
+        <div class="multi-box">
+          <h3>🏠 部屋を作る（ホスト）</h3>
+          <p style="font-size:12px; color:#555;">部屋を作ると4桁のコードが発行されます。</p>
+          <button id="createRoomBtn" class="game-button" style="background: linear-gradient(#ab47bc, #7b1fa2); color:#fff; box-shadow:0 4px 0 #4a148c;">部屋を作る</button>
+          <div id="hostRoomCodeArea" hidden>
+            <div style="font-size:13px; font-weight:bold; margin-top:8px;">あなたのルームコード</div>
+            <div id="generatedRoomCode" class="room-code-display">----</div>
+            <p id="roomStatusText" style="font-size:12px; color:#d32f2f; font-weight:bold;">友達の参加を待っています…</p>
+            <button id="startMultiGameBtn" class="game-button" disabled>対戦スタート！</button>
+          </div>
+        </div>
+
+        <div class="multi-box">
+          <h3>🔑 部屋に入る（ゲスト）</h3>
+          <p style="font-size:12px; color:#555;">教えてもらった4桁のコードを入力してください。</p>
+          <input type="text" id="joinRoomInput" class="multi-input" maxlength="4" placeholder="1234">
+          <div style="margin-top:10px;">
+            <button id="joinRoomBtn" class="game-button" style="background: linear-gradient(#42a5f5, #1e88e5); color:#fff; box-shadow:0 4px 0 #1565c0;">部屋に入る</button>
+          </div>
+        </div>
+      </div>
+
+      <footer class="modal-footer">
+        <button id="multiReturnBtn" class="modal-return">タイトルへ戻る</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- モーダル各種 -->
+  <div id="howtoScreen" class="modal-screen" hidden>
+    <div class="modal-window">
+      <header class="modal-header">
+        <div class="modal-icon">📖</div>
+        <div>
+          <h1>あそびかた</h1>
+          <p>ルールを覚えて鳥取No.1配達員を目指そう！</p>
+        </div>
+        <button id="howtoCloseBtn" class="modal-close">×</button>
+      </header>
+      <div class="howto-content" style="margin-top:12px;">
+        <div class="howto-section">
+          <h3>🎲 1. 基本ルール</h3>
+          全20ターン！サイコロを振って鳥取県内を移動します。<br>
+          「お店マス」で特産品を仕入れて、指定された目的地に届けると売上金をGET！20ターン終了時、一番多く稼いだ人の勝ちです。
+        </div>
+        <div class="howto-section">
+          <h3>🔧 2. 車庫マス（乗り物進化）</h3>
+          「鳥取駅」「倉吉駅」「米子駅」「境港」などの車庫マスで、所持金を使って乗り物をアップグレード！<br>
+          🚲 <strong>自転車</strong> ➔ 🛵 <strong>バイク</strong>（赤マス減算） ➔ 🛻 <strong>軽トラ</strong>（赤マス半減＆出目+1！）
+        </div>
+        <div class="howto-section">
+          <h3>💥 3. 赤マスと荷物のHP</h3>
+          赤マスを踏むと所持金が減るほか、運んでいる特産品にダメージが入ります！<br>
+          品質（HP）が下がると配達成功時の報酬が減ってしまいます。「🛠️ お直しカード」で修復しよう！
+        </div>
+        <div class="howto-section">
+          <h3>🌌 4. 12ターン目：星取県（夜）モード</h3>
+          12ターン目を迎えると画面が「星空モード」に変化！近道分岐で超ショートカット<strong>「天の川ルート」</strong>が開通します！
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button id="howtoReturnBtn" class="modal-return">閉じる</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="zukanScreen" class="modal-screen" hidden>
+    <div class="modal-window">
+      <header class="modal-header">
+        <div class="modal-icon">📙</div>
+        <div>
+          <h1>とっとり特産品ずかん</h1>
+          <p>仕入れたことのある特産品が登録されるよ！</p>
+        </div>
+        <button id="zukanCloseBtn" class="modal-close">×</button>
+      </header>
+      <div id="zukanGrid" class="zukan-grid"></div>
+      <footer class="modal-footer">
+        <button id="zukanReturnBtn" class="modal-return">閉じる</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="shopScreen" class="modal-screen" hidden>
+    <div class="modal-window">
+      <header class="modal-header">
+        <div class="modal-icon">🏪</div>
+        <div>
+          <h1 id="shopTitle">ご当地お店マス</h1>
+          <p id="shopSubTitle">地域の特産品を仕入れて配達しよう！</p>
+        </div>
+        <button id="shopCloseBtn" class="modal-close">×</button>
+      </header>
+      <div class="shop-status"><span>🪙 所持金</span><strong id="shopMoney">500円</strong></div>
+      <div id="shopProducts" class="shop-products"></div>
+      <footer class="modal-footer">
+        <p id="shopMessage" style="flex:1; font-weight:bold; color:#65361d;">どの特産品を仕入れる？</p>
+        <button id="shopReturnBtn" class="modal-return">🗺️ マップに戻る</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="garageScreen" class="modal-screen" hidden>
+    <div class="modal-window">
+      <header class="modal-header">
+        <div class="modal-icon">🔧</div>
+        <div>
+          <h1 id="garageTitle">鳥取駅 車庫マス</h1>
+          <p>乗り物をランクアップして配達を有利にしよう！</p>
+        </div>
+        <button id="garageCloseBtn" class="modal-close">×</button>
+      </header>
+      <div class="shop-status">
+        <span>🪙 所持金: <strong id="garageMoney">500円</strong></span>
+        <span>現在の乗り物: <strong id="garageCurrentVehicle">🚲 自転車</strong></span>
+      </div>
+      <div id="garageUpgrades" class="shop-products"></div>
+      <footer class="modal-footer">
+        <p id="garageMessage" style="flex:1; font-weight:bold; color:#65361d;">車庫でメンテナンス！乗り物をパワーアップする？</p>
+        <button id="garageReturnBtn" class="modal-return">🗺️ 出発する</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="cardScreen" class="modal-screen" hidden>
+    <div class="modal-window">
+      <header class="modal-header">
+        <div class="modal-icon">🎴</div>
+        <div>
+          <h1>手持ちカード</h1>
+          <p>カードを使ってゲームを有利に進めよう！</p>
+        </div>
+        <button id="cardCloseBtn" class="modal-close">×</button>
+      </header>
+      <div id="cardList" class="shop-products" style="margin-top:14px;"></div>
+      <footer class="modal-footer">
+        <button id="cardReturnBtn" class="modal-return">閉じる</button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="quizScreen" class="modal-screen" hidden>
+    <div class="modal-window quiz-window">
+      <header class="modal-header">
+        <div class="modal-icon">❓</div>
+        <div>
+          <h1>鳥取県ご当地クイズ！</h1>
+          <p>正解するとボーナス+300円獲得！</p>
+        </div>
+      </header>
+      <div id="quizQuestionText" class="quiz-question">クイズの問題文</div>
+      <div id="quizOptionsContainer" class="quiz-options"></div>
+    </div>
+  </div>
+
+  <div id="resultScreen" class="modal-screen" hidden>
+    <div class="modal-window result-window">
+      <div class="result-title">🏆 デリバリーバトル 結果発表！</div>
+      <p id="winnerMessage" style="font-size: 18px; font-weight: bold;"></p>
+      <table class="result-table">
+        <thead>
+          <tr><th>順位</th><th>プレイヤー</th><th>乗り物</th><th>配達成功数</th><th>配達売上合計</th></tr>
+        </thead>
+        <tbody id="resultTableBody"></tbody>
+      </table>
+      <div class="result-actions">
+        <button id="replayBtn" class="game-button">🔄 もう一回遊ぶ</button>
+        <button id="restartBtn" class="game-button" style="background: linear-gradient(#64b5f6, #1976d2); color:#fff; box-shadow:0 4px 0 #0d47a1;">🏠 タイトルに戻る</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PeerJS 通信用ライブラリ -->
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="script.js" defer></script>
+</body>
+</html>
