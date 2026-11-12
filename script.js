@@ -294,24 +294,60 @@ function setupPeer() {
   if (peer) return;
   const random4 = Math.floor(1000 + Math.random() * 9000).toString();
   roomCode = random4;
-  peer = new Peer(`tottori-game-${random4}`);
+  
+  // 無料のPeerJS公式クラウドサーバーへ確実に接続する設定
+  peer = new Peer(`tottori-game-${random4}`, {
+    debug: 2
+  });
 
   peer.on('open', (id) => {
     if (generatedRoomCode) generatedRoomCode.textContent = roomCode;
   });
 
   peer.on('connection', (conn) => {
+    // 接続が確立したらリストに追加
+    connections.push(conn);
+
     conn.on('data', (data) => {
       if (data.type === "JOIN_REQUEST") {
-        connections.push(conn);
-        const joinedIdx = connections.length;
-        botStates[joinedIdx - 1].name = data.name || `P${joinedIdx + 1}`;
-        botStates[joinedIdx - 1].isHuman = true;
+        const joinedIdx = connections.length; // 参加者のインデックス
+        botStates[joinedIdx].name = data.name || `P${joinedIdx + 1}`;
+        botStates[joinedIdx].isHuman = true;
 
-        if (roomStatusText) roomStatusText.textContent = `${botStates[joinedIdx - 1].name} が参加しました！（計${joinedIdx + 1}人）`;
+        if (roomStatusText) roomStatusText.textContent = `${botStates[joinedIdx].name} が参加しました！（計${joinedIdx + 1}人）`;
         if (startMultiGameBtn) startMultiGameBtn.disabled = false;
 
+        // 相手に承認とプレイヤー番号を返す
         conn.send({ type: "JOIN_ACCEPTED", playerIndex: joinedIdx });
+      } else {
+        handleNetworkData(data);
+      }
+    });
+  });
+
+  peer.on('error', (err) => {
+    console.error("PeerJS Error:", err);
+    alert("通信エラーが発生しました: " + err.type);
+  });
+}
+
+// ゲスト側の参加処理関数（※もし関数名が異なる場合は合わせ込んでください）
+function joinRoom(inputCode, playerName) {
+  if (!peer) {
+    peer = new Peer(); // ゲストはランダムIDで初期化
+  }
+
+  peer.on('open', () => {
+    const conn = peer.connect(`tottori-game-${inputCode}`);
+    
+    conn.on('open', () => {
+      conn.send({ type: "JOIN_REQUEST", name: playerName });
+    });
+
+    conn.on('data', (data) => {
+      if (data.type === "JOIN_ACCEPTED") {
+        myPlayerIndex = data.playerIndex;
+        if (roomStatusText) roomStatusText.textContent = "ホストの対戦開始を待っています...";
       } else {
         handleNetworkData(data);
       }
