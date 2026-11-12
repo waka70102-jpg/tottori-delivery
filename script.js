@@ -292,32 +292,33 @@ window.addEventListener("click", (e) => {
 // ========================================
 function setupPeer() {
   if (peer) return;
+  isMultiplayer = true;
+  isHost = true;
+  
   const random4 = Math.floor(1000 + Math.random() * 9000).toString();
   roomCode = random4;
   
-  // 無料のPeerJS公式クラウドサーバーへ確実に接続する設定
-  peer = new Peer(`tottori-game-${random4}`, {
-    debug: 2
-  });
+  peer = new Peer(`tottori-game-${random4}`, { debug: 1 });
 
   peer.on('open', (id) => {
     if (generatedRoomCode) generatedRoomCode.textContent = roomCode;
   });
 
   peer.on('connection', (conn) => {
-    // 接続が確立したらリストに追加
     connections.push(conn);
 
     conn.on('data', (data) => {
       if (data.type === "JOIN_REQUEST") {
-        const joinedIdx = connections.length; // 参加者のインデックス
-        botStates[joinedIdx].name = data.name || `P${joinedIdx + 1}`;
-        botStates[joinedIdx].isHuman = true;
+        const joinedIdx = connections.length; // 参加者の番号 (1, 2, 3...)
+        if (botStates[joinedIdx]) {
+          botStates[joinedIdx].name = data.name || `P${joinedIdx + 1}`;
+          botStates[joinedIdx].isHuman = true;
+        }
 
-        if (roomStatusText) roomStatusText.textContent = `${botStates[joinedIdx].name} が参加しました！（計${joinedIdx + 1}人）`;
+        if (roomStatusText) roomStatusText.textContent = `${data.name || 'ゲスト'} が参加しました！（計${joinedIdx + 1}人）`;
         if (startMultiGameBtn) startMultiGameBtn.disabled = false;
 
-        // 相手に承認とプレイヤー番号を返す
+        // 相手に参加許可とプレイヤー番号を送る
         conn.send({ type: "JOIN_ACCEPTED", playerIndex: joinedIdx });
       } else {
         handleNetworkData(data);
@@ -331,30 +332,6 @@ function setupPeer() {
   });
 }
 
-// ゲスト側の参加処理関数（※もし関数名が異なる場合は合わせ込んでください）
-function joinRoom(inputCode, playerName) {
-  if (!peer) {
-    peer = new Peer(); // ゲストはランダムIDで初期化
-  }
-
-  peer.on('open', () => {
-    const conn = peer.connect(`tottori-game-${inputCode}`);
-    
-    conn.on('open', () => {
-      conn.send({ type: "JOIN_REQUEST", name: playerName });
-    });
-
-    conn.on('data', (data) => {
-      if (data.type === "JOIN_ACCEPTED") {
-        myPlayerIndex = data.playerIndex;
-        if (roomStatusText) roomStatusText.textContent = "ホストの対戦開始を待っています...";
-      } else {
-        handleNetworkData(data);
-      }
-    });
-  });
-}
-
 function joinRoom(targetCode) {
   if (!targetCode || targetCode.length !== 4) {
     alert("4桁のルームコードを正しく入力してください。");
@@ -363,22 +340,37 @@ function joinRoom(targetCode) {
   isMultiplayer = true;
   isHost = false;
 
-  peer = new Peer();
-  peer.on('open', () => {
-    const conn = peer.connect(`tottori-game-${targetCode}`);
-    connections = [conn];
-
-    conn.on('open', () => {
-      conn.send({ type: "JOIN_REQUEST", name: playerState.name });
+  if (peer) {
+    connectToHost(targetCode);
+  } else {
+    peer = new Peer();
+    peer.on('open', () => {
+      connectToHost(targetCode);
     });
+  }
+  
+  peer.on('error', (err) => {
+    console.error("PeerJS Error:", err);
+    alert("部屋が見つからないか、通信エラーが発生しました。");
+  });
+}
 
-    conn.on('data', (data) => handleNetworkData(data));
+function connectToHost(targetCode) {
+  const conn = peer.connect(`tottori-game-${targetCode}`);
+  connections = [conn];
+
+  conn.on('open', () => {
+    conn.send({ type: "JOIN_REQUEST", name: playerState ? playerState.name : "ゲスト" });
+  });
+
+  conn.on('data', (data) => {
+    handleNetworkData(data);
   });
 }
 
 function broadcastData(data) {
   connections.forEach(conn => {
-    if (conn.open) conn.send(data);
+    if (conn && conn.open) conn.send(data);
   });
 }
 
