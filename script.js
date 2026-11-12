@@ -18,13 +18,6 @@ const howtoBtn = document.getElementById("howtoBtn");
 const zukanBtn = document.getElementById("zukanBtn");
 
 const multiScreen = document.getElementById("multiScreen");
-const hostBtn = document.getElementById("hostBtn");
-const joinBtn = document.getElementById("joinBtn");
-const roomCodeInput = document.getElementById("roomCodeInput");
-const generatedRoomCode = document.getElementById("generatedRoomCode");
-const roomStatusText = document.getElementById("roomStatusText");
-const startMultiGameBtn = document.getElementById("startMultiGameBtn");
-const backToTitleBtn = document.getElementById("backToTitleBtn");
 
 const zukanModal = document.getElementById("zukanModal");
 const zukanList = document.getElementById("zukanList");
@@ -47,15 +40,8 @@ mapImage.src = "map.png";
 let boardNodes = [];
 let mission = null;
 
-let isMultiplayer = false;
-let isHost = true;
-let peer = null;
-let roomCode = "";
-let connections = [];
-let myPlayerIndex = 0;
-
 let turnPlayerIndex = 0;
-let phase = "WAITING"; // "WAITING", "DICE_ROLLED", "CHOOSING_NODE", "EVENT", "GAME_OVER"
+let phase = "WAITING"; // "WAITING", "DICE_ROLLED", "CHOOSING_NODE", "EVENT", "BOT_TURN", "GAME_OVER"
 let rolledValue = 0;
 let selectableNodes = [];
 let isTapPending = false;
@@ -73,9 +59,9 @@ let playerState = {
 
 let botStates = [
   playerState,
-  { name: "Bot 1", nodeId: 1, score: 0, isHuman: false },
-  { name: "Bot 2", nodeId: 1, score: 0, isHuman: false },
-  { name: "Bot 3", nodeId: 1, score: 0, isHuman: false }
+  { name: "Bot 1", nodeId: 1, score: 0 },
+  { name: "Bot 2", nodeId: 1, score: 0 },
+  { name: "Bot 3", nodeId: 1, score: 0 }
 ];
 
 // 鳥取県19市町村の基本ノードデータ
@@ -113,6 +99,10 @@ const EDGES = [
 // 3. 初期化処理
 // ========================================
 function initGame() {
+  // 「みんなでプレイ」のボタンと画面を完全に削除・非表示にする
+  if (multiMenuBtn) multiMenuBtn.remove();
+  if (multiScreen) multiScreen.remove();
+
   boardNodes = DEFAULT_NODES.map(node => {
     const neighbors = [];
     EDGES.forEach(([u, v]) => {
@@ -146,10 +136,9 @@ function setupEventListeners() {
 // 4. ゲーム進行ロジック
 // ========================================
 function startSingleGame() {
-  isMultiplayer = false;
   if (titleScreen) titleScreen.setAttribute("hidden", "true");
   
-  // ミッション決定
+  // ミッション決定（スタート地点の鳥取市以外からランダム）
   const targetNode = boardNodes[Math.floor(Math.random() * (boardNodes.length - 1)) + 1];
   mission = { targetId: targetNode.id, name: targetNode.name };
 
@@ -199,8 +188,8 @@ function onCanvasClick(e) {
 }
 
 function onDiceClick() {
-  if (phase !== "WAITING" && phase !== "READY") return;
-  if (turnPlayerIndex !== 0) return; // プレイヤーのターンのみ
+  if (phase !== "WAITING") return;
+  if (turnPlayerIndex !== 0) return;
 
   rolledValue = Math.floor(Math.random() * 6) + 1;
   phase = "DICE_ROLLED";
@@ -214,7 +203,22 @@ function onDiceClick() {
 }
 
 function onCardClick() {
-  alert("カード機能：ダブルダイスを使用しました！次のサイコロの目が2倍になります。");
+  if (phase !== "WAITING" || turnPlayerIndex !== 0) return;
+  if (playerState.cards.double <= 0) {
+    alert("使えるカードがありません！");
+    return;
+  }
+  
+  playerState.cards.double--;
+  rolledValue = (Math.floor(Math.random() * 6) + 1) * 2;
+  phase = "DICE_ROLLED";
+  if (diceBtn) diceBtn.disabled = true;
+
+  setMessageWithTap(`ダブルダイス発動！合計「${rolledValue}」が出ました！移動先をタップしてください。`, () => {
+    calculateSelectableNodes(botStates[0].nodeId, rolledValue);
+    phase = "CHOOSING_NODE";
+    drawMap();
+  });
 }
 
 function calculateSelectableNodes(startId, steps) {
@@ -240,7 +244,7 @@ function movePlayerToNode(pIdx, nodeId) {
 
   const targetNode = boardNodes.find(n => n.id === nodeId);
   
-  if (!playerState.history.includes(targetNode.name)) {
+  if (pIdx === 0 && !playerState.history.includes(targetNode.name)) {
     playerState.history.push(targetNode.name);
   }
 
@@ -256,8 +260,9 @@ function movePlayerToNode(pIdx, nodeId) {
   }
 
   // ノードイベント
-  let eventMsg = `${p.name} は「${targetNode.name}」に到着。${targetNode.info}`;
-  p.score += 100;
+  const bonus = targetNode.type === "SPECIAL" ? 200 : 100;
+  p.score += bonus;
+  const eventMsg = `${p.name} は「${targetNode.name}」に到着（+${bonus}pt）。${targetNode.info}`;
 
   setMessageWithTap(eventMsg, () => {
     nextTurn();
@@ -273,12 +278,11 @@ function nextTurn() {
     if (diceBtn) diceBtn.disabled = false;
     setMessageWithTap("あなたのターンです。サイコロを振ってください！", null);
   } else {
-    // Botのターン
     phase = "BOT_TURN";
     if (diceBtn) diceBtn.disabled = true;
     const bot = botStates[turnPlayerIndex];
     setMessageWithTap(`${bot.name} のターンです…`, () => {
-      setTimeout(playBotTurn, 800);
+      setTimeout(playBotTurn, 600);
     });
   }
 }
@@ -287,7 +291,6 @@ function playBotTurn() {
   const bot = botStates[turnPlayerIndex];
   const roll = Math.floor(Math.random() * 6) + 1;
   
-  // Botの移動先決定（簡易AI）
   calculateSelectableNodes(bot.nodeId, roll);
   const chosenNode = selectableNodes[Math.floor(Math.random() * selectableNodes.length)];
   
@@ -300,7 +303,6 @@ function endGame() {
   phase = "GAME_OVER";
   if (diceBtn) diceBtn.disabled = true;
 
-  // スコア順ソート
   const sorted = [...botStates].sort((a, b) => b.score - a.score);
   const myRank = sorted.findIndex(p => p.name === playerState.name) + 1;
 
@@ -314,15 +316,7 @@ function endGame() {
 }
 
 // ========================================
-// 5. オンライン機能 (ダミー・単体動作保全)
-// ========================================
-function setupPeer() {}
-function joinRoom() {}
-function broadcastData() {}
-function handleNetworkData() {}
-
-// ========================================
-// 6. 描画・UI更新
+// 5. 描画・UI更新
 // ========================================
 function updateUI() {
   if (nodeCounter) {
@@ -356,7 +350,7 @@ function drawMap() {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
-  // ルート（エッジ）描画
+  // ルート描画
   ctx.strokeStyle = "rgba(0, 0, 0, 0.25)";
   ctx.lineWidth = 3;
   EDGES.forEach(([u, v]) => {
